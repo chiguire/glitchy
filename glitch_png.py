@@ -237,7 +237,7 @@ def unfilter(ba, bytes_per_pixel, bytes_per_line, height):
 			if scanline_number == 0:	# The above line is all zeroes
 				scanline_recon = scanline_filtered
 			else:
-				scanline_recon = [((i + j) % 256) for i, j in zip(scanline_raw[-1], scanline_filtered)]
+				scanline_recon = [((i + j) % 256) for i, j in zip(scanlines_recon[-1], scanline_filtered)]
 		elif filter_type == 3:	# Average
 			scanline_recon = bytearray()
 			for i in range(len(scanline_filtered)):
