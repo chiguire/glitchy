@@ -138,37 +138,45 @@ def paeth_predictor(left, up, corner):
 		result = corner
 	return result
 	
-def filter(image_data, use_previously_used_filters = False):
-	if use_previously_used_filters and image_data.get("filter_types_used") is None:
-		use_previously_used_filters = False
+def filter(image_data, opt_glitch, opt_seed, opt_use_source_filters, opt_use_random_filters, opt_use_filter, opt_glitch_chance):
+	if opt_use_source_filters and image_data.get("filter_types_used") is None:
+		opt_use_source_filters = False
 	
-	if use_previously_used_filters:
-		print "Using previously used filters"
+	if opt_use_source_filters:
+		print "Using filters from source"
 	
 	ba = []
 	width = image_data["width"]
 	bpp = image_data["bytes_per_pixel"]
 	data = image_data["raw_data"]
 	random_seed = int(time.time())
-	random.seed(random_seed)
-	#print "Random seed %d" % random_seed
 	
-	if use_previously_used_filters:
+	if opt_seed is None:
+		random.seed(random_seed)
+	else:
+		random.seed(opt_seed) #TODO: Add rest of seed values
+	
+	print "Random seed used: %d" % random_seed
+	
+	if opt_use_source_filters:
 		filter_types = image_data["filter_types_used"]
 	else:
-		selected_filter_type = 1 #random.randint(1, 4)
+		filter_types = None
+		
+		if opt_use_filter is not None:
+			selected_filter_type = None
+		else:
+			selected_filter_type = opt_use_filter
 	
 	for i in range(0, len(data), width * bpp):
 		scanline_number = int(i/(width*bpp))
 		
-		#print "In byte %d accessing scanline_number %d" % (i, scanline_number)
-		
-		if use_previously_used_filters:
+		if opt_use_source_filters:
 			filter_type = filter_types[scanline_number]
-		else:
+		elif selected_filter_type is not None:
 			filter_type = selected_filter_type
-		
-		#print "Scanline number: %d, filter_type: %d" % (scanline_number, filter_type)
+		else:
+			filter_type = random.randint(1, 4)
 		
 		ba_line = bytearray()
 		ba_line.append(filter_type)
@@ -177,26 +185,33 @@ def filter(image_data, use_previously_used_filters = False):
 		
 		if filter_type == 0:	# None
 			line_filtered.extend(line_original)
-			#for j in range(len(line_filtered)):
-			#	if random.random() > 0.5:
-			#		line_filtered[j] = (line_filtered[j] + 127) % 256
+			for j in range(len(line_filtered)):
+				if random.random() > opt_glitch_chance:
+					line_filtered[j] = random.randint(0,255)
 		elif filter_type == 1:	# Sub
 			for j in range(len(line_original)):
 				recon_left = 0 if j < bpp else line_original[j - bpp]
 				filtered = (256 + line_original[j] - recon_left) % 256
+				
+				if random.random() > opt_glitch_chance:
+					filtered = random.randint(0,255)
 				line_filtered.append(filtered)
 		elif filter_type == 2:	# Up
 			if scanline_number == 0:	# The above line is all zeroes
 				line_filtered.extend(line_original)
 			else:
 				line_filtered.extend([((256 + (j - i)) % 256) for i, j in zip(ba[-1][1:], line_original)])
+				for j in range(len(line_filtered)):
+					if random.random() > opt_glitch_chance:
+						line_filtered[j] = random.randint(0,255)
 		elif filter_type == 3:	# Average
 			line_up = data[i-(width*bpp):i]
 			for j in range(len(line_original)):
 				recon_left = 0 if j < bpp else line_original[j - bpp]
 				recon_up = 0 if scanline_number == 0 else line_up[j]
 				recon = (256 + line_original[j] - int(math.floor((recon_left + recon_up) / 2))) % 256
-				#print "filtered byte: %s, original byte: %s, original: %s, orig_left: %s, orig_up: %s, filtered: %s" % (hex((width*bpp+1)*scanline_number+j+1), hex(width*bpp*scanline_number+j), hex(line_original[j]), hex(recon_left), hex(recon_up), hex(recon))
+				if random.random() > opt_glitch_chance:
+					recon = random.randint(0,255)
 				line_filtered.append(recon)
 		elif filter_type == 4:	# Paeth
 			line_up = data[i-(width*bpp):i]
@@ -204,14 +219,13 @@ def filter(image_data, use_previously_used_filters = False):
 				recon_left = 0 if j < bpp else line_original[j - bpp]
 				recon_up = 0 if scanline_number == 0 else line_up[j]
 				recon_corner = 0 if (j < bpp or scanline_number == 0) else line_up[j - bpp]
-				line_filtered.append((256 + (line_original[j] - paeth_predictor(recon_left, recon_up, recon_corner))) % 256)
+				recon = (256 + (line_original[j] - paeth_predictor(recon_left, recon_up, recon_corner))) % 256
+				if random.random() > opt_glitch_chance:
+					recon  = random.randint(0,255)
+				line_filtered.append(recon)
 		
 		ba_line.extend(line_filtered)
-		
-		#print "Scanline length: " + str(len(ba_line))
 		ba.append(ba_line)
-	
-	#print "Final ext: " + str(len(ba))
 	return bytearray([item for sublist in ba for item in sublist])
 	
 
@@ -225,7 +239,6 @@ def unfilter(ba, bytes_per_pixel, bytes_per_line, height):
 	filter_type_list = []
 	
 	for scanline_number, (filter_type,scanline_filtered) in enumerate(filter_type_scanline_tuple_list):
-		#print "Scanline number: %d, filter_type: %d" % (scanline_number, filter_type)
 		if filter_type == 0:	# None
 			scanline_recon = scanline_filtered
 		elif filter_type == 1:	# Sub
@@ -244,8 +257,6 @@ def unfilter(ba, bytes_per_pixel, bytes_per_line, height):
 				recon_left = 0 if i < bytes_per_pixel else scanline_recon[-bytes_per_pixel]
 				recon_up = 0 if scanline_number == 0 else scanlines_recon[-1][i]
 				recon = (scanline_filtered[i] + int(math.floor((recon_left + recon_up) / 2))) % 256
-				#print "byte: %d, filtered: %d, recon_left: %d, recon_up: %d, recon: %d" % (i, scanline_filtered[i], recon_left, recon_up, recon)
-				#print "filtered byte: %s, original byte: %s, filtered: %s, recon_left: %s, recon_up: %s, recon: %s" % (hex((1024*3+1)*scanline_number+i+1), hex(1024*3*scanline_number+i), hex(scanline_filtered[i]), hex(recon_left), hex(recon_up), hex(recon))
 				scanline_recon.append(recon)
 		elif filter_type == 4:	# Paeth
 			scanline_recon = bytearray()
@@ -375,60 +386,23 @@ def get_image_data(chunks, image_data):
 	
 	image_contents = inflate(image_contents_compressed)
 	image_scanlines, filter_types_used = unfilter(image_contents, image_data["bytes_per_pixel"], image_data["bytes_per_line"],	image_data["height"])
-	#print "Original data is %d bytes, filtered data is %d-bytes, compressed to %d bytes" % (len(image_scanlines), len(image_contents), len(image_contents_compressed))
 	
 	if isinstance(image_scanlines, basestring):
 		return image_scanlines
-	
-	#compressed_contents = deflate(image_contents)
-	#compressed_contents_len = len(compressed_contents)
-	#bytes_differ = 0
-	#for a, b in zip(image_contents_compressed, compressed_contents):
-	#	if a != b:
-	#		bytes_differ += 1
-	#print "Recompressed data is %d bytes, differs from original in %d bytes" % (compressed_contents_len, bytes_differ)
 	
 	image_data["filtered_data"] = image_contents
 	image_data["raw_data"] = image_scanlines
 	image_data["filter_types_used"] = filter_types_used
 	
-	#filename, file_extension = os.path.splitext(image_data["filename"])
-	#f = open(filename+"_filtered.bin", 'wb')
-	#f.write(image_contents)
-	#f.close()
-	#f = open(filename+"_unfiltered.bin", 'wb')
-	#f.write(image_scanlines)
-	#f.close()
-	
 def get_IDAT_chunk(image_data, opts):
-	if opts.has_key("--glitch_png") and opts["--glitch_png"]:
-		pass #mess with filtered data
-	else:
-		chunk_contents = filter(image_data, True)
+	chunk_contents = filter(image_data, opts["glitch"], opts["seed"], opts["use_source_filters"], opts["use_random_filters"], opts["use_filter"], opts["glitch_chance"])
 	
 	compressed_contents = deflate(chunk_contents)
 	compressed_contents_len = len(compressed_contents)
 	
-	#filename, file_extension = os.path.splitext(image_data["filename"])
-	#f = open(filename+"_newly_filtered.bin", 'wb')
-	#f.write(chunk_contents)
-	#f.close()
-	
-	#print "Original data is %d bytes, filtered data is %d-bytes, compressed to %d bytes" % (len(image_data["raw_data"]), len(chunk_contents), compressed_contents_len)
-	
-	#bytes_differ = 0
-	#bytes_differ_start = []
-	#for n, (a, b) in enumerate(zip(image_data["filtered_data"], chunk_contents)):
-	#	if a != b:
-	#		bytes_differ += 1
-	#		if len(bytes_differ_start) < 100:
-	#			bytes_differ_start.append(n)
-	#print "Newly filtered data differs from raw data in %d bytes, first 100 different bytes %s" % (bytes_differ, str([hex(j) for j in bytes_differ_start]))
-	
 	chunk_name_contents = bytearray("IDAT".encode("ascii"))
 	chunk_name_contents.extend(compressed_contents)
 	chunk_name_contents_crc = binascii.crc32(chunk_name_contents) & 0xffffffff
-	#print "CRC is " + str(chunk_name_contents_crc)
 	
 	result = bytearray()
 	int_to_byte(result, compressed_contents_len)
@@ -487,9 +461,9 @@ def write_png(image_data, opts):
 			#else: ignore IDAT chunk
 		else:
 			if c["name"] == "IEND" and not wrote_IDAT_chunk:
-				chunk_contents = filter(image_data, True)
-				IDAT_chunk = get_IDAT_chunk(chunk_contents, opts)
+				IDAT_chunk = get_IDAT_chunk(image_data, opts)
 				ba.extend(IDAT_chunk)
+				print "Writing %d-byte %s chunk" % (length, "IDAT")
 				wrote_IDAT_chunk = True
 			else:
 				print "Writing %d-byte %s chunk" % (c["length"], c["name"])
@@ -507,9 +481,14 @@ def glitch_png(filename, image_data, opts):
 		print "Written image %s." % (filename)
 
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(description='Glitch PNGs.')
+	parser = argparse.ArgumentParser(description='Reads a PNG file and writes it .')
 	parser.add_argument('filename', metavar='filename', help='image filename')
-	parser.add_argument('--glitch_png', action='store_true', help='glitches filtered data')
+	parser.add_argument('--glitch', action='store', metavar='N', type=int, help='glitches data while storing PNG, writes N files', default=1, const=0, nargs='?')
+	parser.add_argument('--seed', action='store', nargs='?', help='uses this value as random seed', default=None, const=None)
+	parser.add_argument('--use_source_filters', action='store_true', help='if source file is PNG, it will used the filters for each line from the source. Otherwise will filter to its own accord. If source is not PNG this value is not used.')
+	parser.add_argument('--use_random_filters', action='store_true', help='it will use random filters when writing to PNG. Not used if --use_source_filters is specified.')
+	parser.add_argument('--use_filter', action='store', metavar='F', type=int, nargs=1, help='use this specific filter (0-4) for all lines', const=None)
+	parser.add_argument('--glitch_chance', action='store', metavar='%', type=float, nargs='?', help='chance between 0.0-1.0 of applying glitch', const=0.8)
 	opts = parser.parse_args()
 	
 	filename = sys.argv[1]
@@ -521,7 +500,11 @@ if __name__ == "__main__":
 	
 	filename, file_extension = os.path.splitext(filename)
 	
-	for i in xrange(1):
-		glitch_png(filename+"_"+str(i)+file_extension, image_data, vars(opts))
+	opts_vars = vars(opts)
+	
+	print opts
+	
+	for i in xrange(opts_vars["glitch"]):
+			glitch_png(filename+"_"+str(i)+file_extension, image_data, opts_vars)
 	
 	sys.exit(0)
