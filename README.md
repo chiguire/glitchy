@@ -14,6 +14,7 @@ glitch_png.py is inspired by [UCNV's work](http://ucnv.github.io/pnglitch/). By 
 
 ## Usage
 
+``
 usage: glitch_png.py [-h] [--glitch [N]] [--seed [SEED]]
                      [--use_source_filters] [--use_random_filters]
                      [--use_filter F] [--glitch_chance [%]]
@@ -36,12 +37,13 @@ optional arguments:
                         used if --use_source_filters is specified.
   --use_filter F        use this specific filter (0-4) for all lines
   --glitch_chance [%]   chance between 0.0-1.0 of applying glitch
-  
+``
+ 
 ## Example
 
 This is an example of using png_glitch.py. The original image is on the right, and the glitched image is on the left. The image comes from the [USC-SIPI Image Database](http://sipi.usc.edu/database/database.php?volume=misc&image=14).
 
 ![Example of png_glitch.py](http://i.imgur.com/ZZuGGof.png)
 
-Command line used for this image: glitch_png.py 4.2.06.png --glitch 1 --use_source_filters --glitch_chance 0.99
+Command line used for this image: `glitch_png.py 4.2.06.png --glitch 1 --use_source_filters --glitch_chance 0.99`
 
